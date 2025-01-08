@@ -6,8 +6,8 @@ from tweepy_authlib import CookieSessionUserHandler
 
 
 def login():
-    if Path("antfly_cookie.json").exists():
-        with open("antfly_cookie.json", "r") as f:
+    if Path("cookie.json").exists():
+        with open("cookie.json", "r") as f:
             cookies_dict = json.load(f)
         cookies = RequestsCookieJar()
         for key, value in cookies_dict.items():
@@ -19,6 +19,6 @@ def login():
             password=input("password: "),
         )
         cookies = auth_handler.get_cookies()
-        with open("antfly_cookie.json", "w") as f:
+        with open("cookie.json", "w") as f:
             json.dump(cookies.get_dict(), f, ensure_ascii=False, indent=4)
         return auth_handler

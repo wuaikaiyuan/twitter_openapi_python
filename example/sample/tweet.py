@@ -11,9 +11,10 @@ X = TwitterOpenapiPython().get_client_from_cookies(cookies=cookies_dict)
 
 # tweet = X.get_default_api().get_tweet_result_by_rest_id(tweet_id='1451015154196353027')
 # print(f'{tweet.data.tweet}')
-print('---------------------------------')
 
 tweets = X.get_tweet_api().get_user_tweets(user_id='173630669108149681')
 for tweet in tweets:
     print(f'{tweet.data.tweet}')
+    print('---------------------------------')
+
 

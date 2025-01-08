@@ -21,8 +21,8 @@ from tweepy_authlib import CookieSessionUserHandler
 from twitter_openapi_python import TwitterOpenapiPython
 
 # login by tweepy_authlib
-if Path("antfly_cookie.json").exists():
-    with open("antfly_cookie.json", "r") as f:
+if Path("cookie.json").exists():
+    with open("cookie.json", "r") as f:
         cookies_dict = json.load(f)
         if isinstance(cookies_dict, list):
             cookies_dict = {k["name"]: k["value"] for k in cookies_dict}

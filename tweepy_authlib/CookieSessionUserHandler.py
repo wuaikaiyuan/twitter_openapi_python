@@ -39,39 +39,39 @@ class CookieSessionUserHandler(AuthBase):
     def __init__(self, cookies: Optional[RequestsCookieJar] = None, screen_name: Optional[str] = None, 
                  password: Optional[str] = None) -> None:
         """
-        CookieSessionUserHandler を初期化する
-        cookies と screen_name, password のどちらかを指定する必要がある
+        初始化CookieSessionUserHandler
+        需要指定cookies或screen_name和password中的一个
 
         Args:
-            cookies (Optional[RequestsCookieJar], optional): リクエスト時に利用する Cookie. Defaults to None.
-            screen_name (Optional[str], optional): Twitter のスクリーンネーム (@は含まない). Defaults to None.
-            password (Optional[str], optional): Twitter のパスワード. Defaults to None.
+            cookies (Optional[RequestsCookieJar], optional): 请求时使用的Cookie. 默认为None.
+            screen_name (Optional[str], optional): Twitter的用户名 (不包含@). 默认为None.
+            password (Optional[str], optional): Twitter的密码. 默认为None.
 
         Raises:
-            ValueError: Cookie が指定されていないのに、スクリーンネームまたはパスワードが (もしくはどちらも) 指定されていない
-            ValueError: スクリーンネームが空文字列
-            ValueError: パスワードが空文字列
-            tweepy.BadRequest: スクリーンネームまたはパスワードが間違っている
-            tweepy.HTTPException: サーバーエラーなどの問題でログインに失敗した
-            tweepy.TweepyException: 認証フローの途中でエラーが発生し、ログインに失敗した
+            ValueError: 未指定Cookie但同时未指定用户名或密码(或两者都未指定)
+            ValueError: 用户名为空字符串
+            ValueError: 密码为空字符串
+            tweepy.BadRequest: 用户名或密码错误
+            tweepy.HTTPException: 由于服务器错误等问题导致登录失败
+            tweepy.TweepyException: 认证流程中发生错误导致登录失败
         """
 
         self.screen_name = screen_name
         self.password = password
 
-        # Cookie が指定されていないのに、スクリーンネームまたはパスワードが (もしくはどちらも) 指定されていない
+        # 当未指定Cookie但同时未指定用户名或密码(或两者都未指定)时
         if cookies is None and (self.screen_name is None or self.password is None):
             raise ValueError('Either cookie or screen_name and password must be specified.')
 
-        # スクリーンネームが空文字列
+        # 用户名为空字符串
         if self.screen_name == '':
             raise ValueError('screen_name must not be empty string.')
 
-        # パスワードが空文字列
+        # 密码为空字符串
         if self.password == '':
             raise ValueError('password must not be empty string.')
 
-        # HTML 取得時の HTTP リクエストヘッダー
+        # 获取HTML时的HTTP请求头
         self._html_headers = {
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'accept-encoding': 'gzip, deflate, br',
@@ -87,7 +87,7 @@ class CookieSessionUserHandler(AuthBase):
             'user-agent': self.USER_AGENT,
         }
 
-        # JavaScript 取得時の HTTP リクエストヘッダー
+        # 获取JavaScript时的HTTP请求头
         self._js_headers = self._html_headers.copy()
         self._js_headers['accept'] = '*/*'
         self._js_headers['referer'] = 'https://x.com/'
@@ -96,7 +96,7 @@ class CookieSessionUserHandler(AuthBase):
         self._js_headers['sec-fetch-site'] = 'cross-site'
         del self._js_headers['sec-fetch-user']
 
-        # 認証フロー API アクセス時の HTTP リクエストヘッダー
+        # 认证流程API访问时的HTTP请求头
         self._auth_flow_api_headers = {
             'accept': '*/*',
             'accept-encoding': 'gzip, deflate, br',
@@ -118,8 +118,8 @@ class CookieSessionUserHandler(AuthBase):
             'x-twitter-client-language': 'ja',
         }
 
-        # GraphQL API (Twitter Web App API) アクセス時の HTTP リクエストヘッダー
-        ## GraphQL API は https://x.com/i/api/graphql/ 配下にあり同一ドメインのため、origin と referer は意図的に省略している
+        # GraphQL API (Twitter Web App API)访问时的HTTP请求头
+        ## GraphQL API は https://x.com/i/api/graphql/下且属于同一域名，因此故意省略origin和referer
         self._graphql_api_headers = {
             'accept': '*/*',
             'accept-encoding': 'gzip, deflate, br',
@@ -133,81 +133,81 @@ class CookieSessionUserHandler(AuthBase):
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-site',
             'user-agent': self.USER_AGENT,
-            'x-csrf-token': None,  # ここは後でセットする
+            'x-csrf-token': None,  # 这里稍后设置
             'x-twitter-active-user': 'yes',
             'x-twitter-auth-type': 'OAuth2Session',
             'x-twitter-client-language': 'ja',
         }
 
-        # Cookie ログイン用のセッションを作成
-        ## 実際の Twitter API へのリクエストには tweepy.API 側で作成されたセッションが利用される
-        ## その際、__call__() で tweepy.API で作成されたセッションのリクエストヘッダーと Cookie を上書きしている
+        # 创建用于Cookie登录的会话
+        ## 实际的Twitter API请求使用tweepy.API创建的会话
+        ## 在__call__()中，会用tweepy.API创建的会话的请求头和Cookie覆盖
         self._session = requests.Session()
 
-        # API からレスポンスが返ってきた際に自動で CSRF トークンを更新する
-        ## 認証に成功したタイミングで、Cookie の "ct0" 値 (CSRF トークン) がクライアント側で生成したものから、サーバー側で生成したものに更新される
+        # 当从API收到响应时自动更新CSRF令牌
+        ## 当认证成功时，Cookie中的"ct0"值(CSRF令牌)会从客户端生成的值更新为服务器端生成的值
         self._session.hooks['response'].append(self._on_response_received)
 
-        # Cookie が指定されている場合は、それをセッションにセット (再ログインを省略する)
+        # 如果指定了Cookie，则将其设置到会话中(跳过重新登录)
         if cookies is not None:
             self._session.cookies = cookies
 
-        # Cookie が指定されていない場合は、ログインを試みる
+        # 如果未指定Cookie，则尝试登录
         else:
             self._login()
 
-        # Cookie から auth_token または ct0 が取得できなかった場合
-        ## auth_token と ct0 はいずれも認証に最低限必要な Cookie のため、取得できなかった場合は認証に失敗したものとみなす
+        # 如果无法从Cookie中获取auth_token或ct0时
+        ## 由于auth_token和ct0都是认证所必需的Cookie，因此如果无法获取则视为认证失败
         if self._session.cookies.get('auth_token', default=None) is None or self._session.cookies.get('ct0',
                                                                                                       default=None) is None:
             raise tweepy.TweepyException('Failed to get auth_token or ct0 from Cookie')
 
-        # Cookie の "gt" 値 (ゲストトークン) を認証フロー API 用ヘッダーにセット
+        # 将Cookie中的"gt"值(访客令牌)设置到认证流程API用的请求头中
         guest_token = self._session.cookies.get('gt')
         if guest_token:
             self._auth_flow_api_headers['x-guest-token'] = guest_token
 
-        # Cookie の "ct0" 値 (CSRF トークン) を GraphQL API 用ヘッダーにセット
+        # 将Cookie中的"ct0"值(CSRF令牌)设置到GraphQL API用的请求头中
         csrf_token = self._session.cookies.get('ct0')
         if csrf_token:
             self._auth_flow_api_headers['x-csrf-token'] = csrf_token
             self._graphql_api_headers['x-csrf-token'] = csrf_token
 
-        # セッションのヘッダーを GraphQL API 用のものに差し替える
-        ## 以前は旧 TweetDeck API 用ヘッダーに差し替えていたが、旧 TweetDeck が完全廃止されたことで
-        ## 逆に怪しまれる可能性があるため GraphQL API 用ヘッダーに変更した
-        ## cross_origin=True を指定して、x.com から api.x.com にクロスオリジンリクエストを送信した際のヘッダーを模倣する
+        # 将会话的请求头替换为GraphQL API用的请求头
+        ## 之前使用旧TweetDeck API的请求头，但由于旧TweetDeck完全停用
+        ## 反而可能引起怀疑，因此改为使用GraphQL API的请求头
+        ## 设置cross_origin=True以模拟从x.com向api.x.com发送跨域请求时的请求头
         self._session.headers.clear()
         self._session.headers.update(self.get_graphql_api_headers(cross_origin=True))
 
     def __call__(self, request: PreparedRequest) -> PreparedRequest:
         """
-        requests ライブラリからリクエスト開始時に呼び出されるフック
+        在requests库开始请求时被调用的钩子
 
         Args:
-            request (PreparedRequest): PreparedRequest オブジェクト
+            request (PreparedRequest): PreparedRequest对象
 
         Returns:
-            PreparedRequest: 認証情報を追加した PreparedRequest オブジェクト
+            PreparedRequest: 添加了认证信息的PreparedRequest对象
         """
 
-        # リクエストヘッダーを認証用セッションのものに差し替える
-        # content-type を上書きしないよう、content-type を控えておいてから差し替える
+        # 将请求头替换为认证用会话的请求头
+        # 为了不覆盖content-type，先保存content-type然后再替换
         content_type = request.headers.get('content-type', None)
         request.headers.update(self._session.headers)  # type: ignore
         if content_type is not None:
-            request.headers['content-type'] = content_type  # 元の content-type に戻す
+            request.headers['content-type'] = content_type  # 恢复原来的content-type
 
-        # リクエストがまだ *.twitter.com に対して行われている場合は、*.x.com に差し替える
-        ## サードパーティー向け API は互換性のため引き続き api.twitter.com でアクセスできるはずだが、
-        ## tweepy-authlib でアクセスしている API は内部 API のため、api.twitter.com のままアクセスしていると怪しまれる可能性がある
+        # 如果请求仍然指向*.twitter.com，则替换为*.x.com
+        ## 虽然为了兼容性，第三方API应该仍然可以通过api.twitter.com访问
+        ## 但由于tweepy-authlib访问的是内部API，如果继续使用api.twitter.com可能会引起怀疑
         assert request.url is not None
         request.url = request.url.replace('twitter.com/', 'x.com/')
 
-        # Twitter API v1.1 の一部 API には旧 TweetDeck 用の Bearer トークンでないとアクセスできないため、
-        # 該当の API のみ旧 TweetDeck 用の Bearer トークンに差し替える
-        # それ以外の API ではそのまま Twitter Web App の Bearer トークンを使い続けることで、不審判定される可能性を下げる
-        ## OldTweetDeck の interception.js に記載の API のうち、明示的に PUBLIC_TOKENS[1] が設定されている API が対象
+        # 有些Twitter API v1.1的API必须使用旧TweetDeck的Bearer令牌才能访问
+        # 仅对这些API使用旧TweetDeck的Bearer令牌，其他API继续使用Twitter Web App的Bearer令牌
+        # 这样可以降低被识别为可疑的可能性
+        ## 在OldTweetDeck的interception.js中列出的API中，只有明确设置了PUBLIC_TOKENS[1]的API才需要
         ## ref: https://github.com/dimdenGD/OldTweetDeck/blob/main/src/interception.js
         TWEETDECK_BEARER_TOKEN_REQUIRED_APIS = [
             '/1.1/statuses/home_timeline.json',
@@ -222,48 +222,48 @@ class CookieSessionUserHandler(AuthBase):
         if any(api_url in request.url for api_url in TWEETDECK_BEARER_TOKEN_REQUIRED_APIS):
             request.headers['authorization'] = self.TWEETDECK_BEARER_TOKEN
 
-        # upload.twitter.com or upload.x.com 以下の API のみ、Twitter Web App の挙動に合わせいくつかのヘッダーを追加削除する
+        # 只对upload.twitter.com或upload.x.com下的API，按照Twitter Web App的行为添加或删除一些请求头
         if 'upload.twitter.com' in request.url or 'upload.x.com' in request.url:
-            # x.com から見て upload.x.com の API リクエストはクロスオリジンになるため、Origin と Referer を追加する
+            # 从x.com角度看，对upload.x.com的API请求是跨域的，因此需要添加Origin和Referer
             request.headers['origin'] = 'https://x.com'
             request.headers['referer'] = 'https://x.com/'
-            # 以下のヘッダーは upload.x.com への API リクエストではなぜか付与されていない
-            request.headers.pop('x-client-transaction-id', None)  # 未実装だが将来的に実装した時のため
+            # 以下请求头在对upload.x.com的API请求中不存在
+            request.headers.pop('x-client-transaction-id', None)  # 为未来实现预留
             request.headers.pop('x-twitter-active-user', None)
             request.headers.pop('x-twitter-client-language', None)
 
-        # Cookie を認証用セッションのものに差し替える
+        # 将Cookie替换为认证用会话的Cookie
         request._cookies.update(self._session.cookies)  # type: ignore
         cookie_header = ''
         for key, value in self._session.cookies.get_dict().items():
             cookie_header += f'{key}={value}; '
         request.headers['cookie'] = cookie_header.rstrip('; ')
 
-        # API からレスポンスが返ってきた際に自動で CSRF トークンを更新する
-        ## やらなくても大丈夫かもしれないけど、念のため
+        # 当从API收到响应时自动更新CSRF令牌
+        ## 虽然可能不做也没问题，但为了以防万一
         request.hooks['response'].append(self._on_response_received)
 
-        # 認証情報を追加した PreparedRequest オブジェクトを返す
+        # 返回添加了认证信息的PreparedRequest对象
         return request
 
     def apply_auth(self: Self) -> Self:
         """
-        tweepy.API の初期化時に認証ハンドラーを適用するためのメソッド
-        自身のインスタンスを認証ハンドラーとして返す
+        在初始化tweepy.API时应用认证处理程序的方法
+        返回自身实例作为认证处理程序
 
         Args:
-            self (Self): 自身のインスタンス
+            self (Self): 自身实例
 
         Returns:
-            Self: 自身のインスタンス
+            Self: 自身实例
         """
 
         return self
 
     def get_cookies(self) -> RequestsCookieJar:
         """
-        現在のログインセッションの Cookie を取得する
-        返される RequestsCookieJar を pickle などで保存しておくことで、再ログインせずにセッションを継続できる
+        获取当前登录会话的Cookie
+        可以将返回的RequestsCookieJar通过pickle等方式保存，以便下次无需重新登录继续使用会话
 
         Returns:
             RequestsCookieJar: Cookie
@@ -273,8 +273,8 @@ class CookieSessionUserHandler(AuthBase):
 
     def get_cookies_as_dict(self) -> Dict[str, str]:
         """
-        現在のログインセッションの Cookie を dict として取得する
-        返される dict を保存しておくことで、再ログインせずにセッションを継続できる
+        以dict形式获取当前登录会话的Cookie
+        可以保存返回的dict，以便下次无需重新登录继续使用会话
 
         Returns:
             Dict[str, str]: Cookie
@@ -284,26 +284,26 @@ class CookieSessionUserHandler(AuthBase):
 
     def get_html_headers(self) -> Dict[str, str]:
         """
-        Twitter Web App の HTML アクセス用の HTTP リクエストヘッダーを取得する
-        Cookie やトークン類の取得のために HTML ページに HTTP リクエストを送る際の利用を想定している
+        获取用于访问 Twitter Web App HTML 的 HTTP 请求头
+        主要用于在发送 HTTP 请求获取 Cookie 和令牌等信息时访问 HTML 页面
 
         Returns:
-            Dict[str, str]: HTML アクセス用の HTTP リクエストヘッダー
+            Dict[str, str]: 用于访问 HTML 的 HTTP 请求头
         """
 
         return self._html_headers.copy()
 
     def get_js_headers(self, cross_origin: bool = False) -> Dict[str, str]:
         """
-        Twitter Web App の JavaScript アクセス用の HTTP リクエストヘッダーを取得する
-        Challenge 用コードの取得のために JavaScript ファイルに HTTP リクエストを送る際の利用を想定している
-        cross_origin=True を指定すると、例えば https://abs.twimg.com/ 以下にある JavaScript ファイルを取得する際のヘッダーを取得できる
+        获取用于访问 Twitter Web App JavaScript 的 HTTP 请求头
+        主要用于在发送 HTTP 请求获取 Challenge 相关代码时访问 JavaScript 文件
+        设置 cross_origin=True 时，可以获取用于访问例如 https://abs.twimg.com/ 下 JavaScript 文件的请求头
 
         Args:
-            cross_origin (bool, optional): x.com 以外のオリジンに送信する HTTP リクエストヘッダーかどうか. Defaults to False.
+            cross_origin (bool, optional): 是否为发送到 x.com 以外源的 HTTP 请求头. Defaults to False.
 
         Returns:
-            Dict[str, str]: JavaScript アクセス用の HTTP リクエストヘッダー
+            Dict[str, str]: 用于访问 JavaScript 的 HTTP 请求头
         """
 
         headers = self._js_headers.copy()
@@ -313,23 +313,23 @@ class CookieSessionUserHandler(AuthBase):
 
     def get_graphql_api_headers(self, cross_origin: bool = False) -> Dict[str, str]:
         """
-        GraphQL API (Twitter Web App API) アクセス用の HTTP リクエストヘッダーを取得する
-        このリクエストヘッダーを使い独自に API リクエストを行う際は、
-        必ず x-csrf-token ヘッダーの値を常に Cookie 内の "ct0" と一致させるように実装しなければならない
-        Twitter API v1.1 に使う場合は cross_origin=True を指定すること (api.x.com が x.com から見て cross-origin になるため)
-        逆に GraphQL API に使う場合は cross_origin=False でなければならない (GraphQL API は x.com から見て same-origin になるため)
+        获取用于访问 GraphQL API (Twitter Web App API) 的 HTTP 请求头
+        使用此请求头自行发送 API 请求时，
+        必须确保 x-csrf-token 头的值始终与 Cookie 中的 "ct0" 值保持一致
+        在用于 Twitter API v1.1 时需要指定 cross_origin=True（因为 api.x.com 对于 x.com 来说是跨源的）
+        相反，在用于 GraphQL API 时必须设置 cross_origin=False（因为 GraphQL API 对于 x.com 来说是同源的）
 
         Args:
-            cross_origin (bool, optional): 返すヘッダーを x.com 以外のオリジンに送信するかどうか. Defaults to False.
+            cross_origin (bool, optional): 返回的请求头是否用于发送到 x.com 以外的源. Defaults to False.
 
         Returns:
-            Dict[str, str]: GraphQL API (Twitter Web App API) アクセス用の HTTP リクエストヘッダー
+            Dict[str, str]: 用于访问 GraphQL API (Twitter Web App API) 的 HTTP 请求头
         """
 
         headers = self._graphql_api_headers.copy()
 
-        # クロスオリジン用に origin と referer を追加
-        # Twitter Web App から api.x.com にクロスオリジンリクエストを送信する際のヘッダーを模倣する
+        # 为跨源请求添加 origin 和 referer
+        # 模拟从 Twitter Web App 向 api.x.com 发送跨源请求时的请求头
         if cross_origin is True:
             headers['origin'] = 'https://x.com'
             headers['referer'] = 'https://x.com/'
@@ -338,22 +338,22 @@ class CookieSessionUserHandler(AuthBase):
 
     def logout(self) -> None:
         """
-        ログアウト処理を行い、Twitter からセッションを切断する
-        単に Cookie を削除するだけだと Twitter にセッションが残り続けてしまうため、今後ログインしない場合は明示的にこのメソッドを呼び出すこと
-        このメソッドを呼び出した後は、取得した Cookie では再認証できなくなる
+        执行登出操作，断开与 Twitter 的会话连接
+        仅仅删除 Cookie 的话会导致会话在 Twitter 端持续存在，因此如果之后不打算登录的话，应该明确调用此方法
+        调用此方法后，将无法使用已获取的 Cookie 重新认证
 
         Raises:
-            tweepy.HTTPException: サーバーエラーなどの問題でログアウトに失敗した
-            tweepy.TweepyException: ログアウト処理中にエラーが発生した
+            tweepy.HTTPException: 由于服务器错误等问题导致登出失败
+            tweepy.TweepyException: 登出处理过程中发生错误
         """
 
-        # ログアウト API 専用ヘッダー
-        ## self._graphql_api_headers と基本共通で、content-type だけ application/x-www-form-urlencoded に変更
+        # 登出 API 专用请求头
+        ## 与 self._graphql_api_headers 基本相同，仅将 content-type 更改为 application/x-www-form-urlencoded
         logout_headers = self._graphql_api_headers.copy()
         logout_headers['content-type'] = 'application/x-www-form-urlencoded'
 
-        # ログアウト API にログアウトすることを伝える
-        ## この API を実行すると、サーバー側でセッションが切断され、今まで持っていたほとんどの Cookie が消去される
+        # 向登出 API 发送登出请求
+        ## 执行此 API 后，服务器端会断开会话，并删除之前持有的大部分 Cookie
         logout_api_response = self._session.post('https://api.x.com/1.1/account/logout.json', headers=logout_headers,
                                                  data={
                                                      'redirectAfterLogout': 'https://x.com/account/switch',
@@ -361,7 +361,7 @@ class CookieSessionUserHandler(AuthBase):
         if logout_api_response.status_code != 200:
             raise self._get_tweepy_exception(logout_api_response)
 
-        # 基本固定値のようなので不要だが、念のためステータスチェック
+        # 虽然看起来是固定值所以可能不需要，但为了以防万一还是检查状态
         try:
             status = logout_api_response.json()['status']
         except:
@@ -371,10 +371,10 @@ class CookieSessionUserHandler(AuthBase):
 
     def _on_response_received(self, response: requests.Response, *args, **kwargs) -> None:
         """
-        レスポンスが返ってきた際に自動的に CSRF トークンを更新するコールバック
+        收到响应时自动更新 CSRF 令牌的回调函数
 
         Args:
-            response (requests.Response): レスポンス
+            response (requests.Response): 响应对象
         """
 
         csrf_token = response.cookies.get('ct0')
@@ -387,13 +387,13 @@ class CookieSessionUserHandler(AuthBase):
 
     def _get_tweepy_exception(self, response: requests.Response) -> tweepy.TweepyException:
         """
-        TweepyException を継承した、ステータスコードと一致する例外クラスを取得する
+        获取与状态码相对应的继承自 TweepyException 的异常类
 
         Args:
-            status_code (int): ステータスコード
+            status_code (int): 状态码
 
         Returns:
-            tweepy.TweepyException: 例外
+            tweepy.TweepyException: 异常对象
         """
 
         if response.status_code == 400:
@@ -413,13 +413,13 @@ class CookieSessionUserHandler(AuthBase):
 
     def _generate_csrf_token(self, size: int = 16) -> str:
         """
-        Twitter の CSRF トークン (Cookie 内の "ct0" 値) を生成する
+        生成 Twitter 的 CSRF 令牌（Cookie 中的 "ct0" 值）
 
         Args:
-            size (int, optional): トークンサイズ. Defaults to 16.
+            size (int, optional): 令牌大小. Defaults to 16.
 
         Returns:
-            str: 生成されたトークン
+            str: 生成的令牌
         """
 
         data = random.getrandbits(size * 8).to_bytes(size, "big")
@@ -427,18 +427,18 @@ class CookieSessionUserHandler(AuthBase):
 
     def _get_guest_token(self) -> str:
         """
-        ゲストトークン (Cookie 内の "gt" 値) を取得する
+        获取访客令牌（Cookie 中的 "gt" 值）
 
         Returns:
-            str: 取得されたトークン
+            str: 获取的令牌
         """
 
-        # HTTP ヘッダーは基本的に認証用セッションのものを使う
+        # HTTP 请求头基本使用认证会话的请求头
         headers = self._auth_flow_api_headers.copy()
         headers.pop('x-csrf-token')
         headers.pop('x-guest-token')
 
-        # API からゲストトークンを取得する
+        # 从 API 获取访客令牌
         # ref: https://github.com/fa0311/TwitterFrontendFlow/blob/master/TwitterFrontendFlow/TwitterFrontendFlow.py#L26-L36
         guest_token_response = self._session.post('https://api.x.com/1.1/guest/activate.json', headers=headers)
         if guest_token_response.status_code != 200:
@@ -452,23 +452,23 @@ class CookieSessionUserHandler(AuthBase):
 
     def _get_ui_metrics(self, js_inst: str) -> Dict[str, Any]:
         """
-        https://x.com/i/js_inst?c_name=ui_metrics から出力される難読化された JavaScript から ui_metrics を取得する
-        ref: https://github.com/hfthair/TweetScraper/blob/master/TweetScraper/spiders/following.py#L50-L94
+        从 https://x.com/i/js_inst?c_name=ui_metrics 获取混淆的 JavaScript 中的 ui_metrics
+        参考: https://github.com/hfthair/TweetScraper/blob/master/TweetScraper/spiders/following.py#L50-L94
 
         Args:
-            js_inst (str): 難読化された JavaScript
+            js_inst (str): 混淆的 JavaScript
 
         Returns:
-            dict[str, Any]: 取得された ui_metrics
+            dict[str, Any]: 获取的 ui_metrics
         """
 
-        # 難読化された JavaScript の中から ui_metrics を取得する関数を抽出
+        # 从混淆的 JavaScript 中提取获取 ui_metrics 的函数
         js_inst_function = js_inst.split('\n')[2]
         js_inst_function_name = re.search(re.compile(r'function [a-zA-Z]+'), js_inst_function).group().replace(
             'function ', '')  # type: ignore
 
-        # 難読化された JavaScript を実行するために簡易的に DOM API をモックする
-        ## とりあえず最低限必要そうなものだけ
+        # 模拟 DOM API 以执行混淆的 JavaScript
+        ## 暂时只模拟最基本的必要功能
         js_dom_mock = """
             var _element = {
                 appendChild: function(x) {
@@ -522,24 +522,24 @@ class CookieSessionUserHandler(AuthBase):
             }
             """
 
-        # 難読化された JavaScript を実行
+        # 执行混淆的 JavaScript
         js_context = js2py.EvalJs()
         js_context.execute(js_dom_mock)
         js_context.execute(js_inst_function)
         js_context.execute(f'var ui_metrics = {js_inst_function_name}()')
 
-        # ui_metrics を取得
+        # 获取 ui_metrics
         ui_metrics = cast(JsObjectWrapper, js_context.ui_metrics)
         return cast(Dict[str, Any], ui_metrics.to_dict())
 
     def _login(self) -> None:
         """
-        スクリーンネームとパスワードを使って認証し、ログインする
+        使用用户名和密码进行认证并登录
 
         Raises:
-            tweepy.BadRequest: スクリーンネームまたはパスワードが間違っている
-            tweepy.HTTPException: サーバーエラーなどの問題でログインに失敗した
-            tweepy.TweepyException: 認証フローの途中でエラーが発生し、ログインに失敗した
+            tweepy.BadRequest: 用户名或密码错误
+            tweepy.HTTPException: 由于服务器错误等问题导致登录失败
+            tweepy.TweepyException: 认证流程中发生错误导致登录失败
         """
 
         def get_flow_token(response: requests.Response) -> str:
@@ -566,39 +566,39 @@ class CookieSessionUserHandler(AuthBase):
                     raise tweepy.TweepyException(f'{subtask_id} not found in response')
             raise self._get_tweepy_exception(response)
 
-        # Cookie をクリア
+        # 清除 Cookie
         self._session.cookies.clear()
 
-        # 一度 https://x.com/ にアクセスして Cookie をセットさせる
-        ## 取得した HTML はゲストトークンを取得するために使う
+        # 先访问 https://x.com/ 以设置 Cookie
+        ## 获取的 HTML 用于获取访客令牌
         html_response = self._session.get('https://x.com/i/flow/login', headers=self._html_headers)
         if html_response.status_code != 200:
             raise self._get_tweepy_exception(html_response)
 
-        # CSRF トークンを生成し、"ct0" としてセッションの Cookie に保存
-        ## 同時に認証フロー API 用の HTTP リクエストヘッダーにもセット ("ct0" と "x-csrf-token" は同じ値になる)
+        # 生成 CSRF 令牌并作为 "ct0" 保存到会话的 Cookie 中
+        ## 同时也设置到认证流程 API 的 HTTP 请求头中（"ct0" 和 "x-csrf-token" 值相同）
         csrf_token = self._generate_csrf_token()
         self._session.cookies.set('ct0', csrf_token, domain='.x.com')
         self._auth_flow_api_headers['x-csrf-token'] = csrf_token
 
-        # まだ取得できていない場合のみ、ゲストトークンを取得し、"gt" としてセッションの Cookie に保存
+        # 仅在尚未获取时，获取访客令牌并作为 "gt" 保存到会话的 Cookie 中
         if self._session.cookies.get('gt', default=None) is None:
             guest_token = self._get_guest_token()
             self._session.cookies.set('gt', guest_token, domain='.x.com')
 
-        ## ゲストトークンを認証フロー API 用の HTTP リクエストヘッダーにもセット ("gt" と "x-guest-token" は同じ値になる)
+        ## 将访客令牌也设置到认证流程 API 的 HTTP 请求头中（"gt" 和 "x-guest-token" 值相同）
         self._auth_flow_api_headers['x-guest-token'] = self._session.cookies.get('gt')
 
-        # これ以降は基本認証フロー API へのアクセスしか行わないので、セッションのヘッダーを認証フロー API 用のものに差し替える
+        # 此后基本只访问认证流程 API，所以将会话的请求头替换为认证流程 API 专用的请求头
         self._session.headers.clear()
         self._session.headers.update(self._auth_flow_api_headers)
 
-        # 極力公式の Twitter Web App に偽装するためのダミーリクエスト
+        # 为了尽可能模拟官方 Twitter Web App 而发送的虚拟请求
         self._session.get('https://api.x.com/1.1/hashflags.json')
 
-        # https://api.x.com/1.1/onboarding/task.json?task=login に POST して認証フローを開始
-        ## 認証フローを開始するには、Cookie に "ct0" と "gt" がセットされている必要がある
-        ## 2024年5月時点の Twitter Web App が送信する JSON パラメータを模倣している
+        # 向 https://api.x.com/1.1/onboarding/task.json?task=login 发送 POST 请求以开始认证流程
+        ## 开始认证流程需要在 Cookie 中设置 "ct0" 和 "gt"
+        ## 模拟 2024年5月时的 Twitter Web App 发送的 JSON 参数
         flow_01_response = self._session.post('https://api.x.com/1.1/onboarding/task.json?flow_name=login', json={
             'input_flow_data': {
                 'flow_context': {
@@ -655,20 +655,20 @@ class CookieSessionUserHandler(AuthBase):
         if flow_01_response.status_code != 200:
             raise self._get_tweepy_exception(flow_01_response)
 
-        # flow_01 のレスポンスから js_inst の URL を取得
-        # subtasks の中に LoginJsInstrumentationSubtask が含まれていない場合、例外を送出する
+        # 从 flow_01 响应中获取 js_inst 的 URL
+        # 如果 subtasks 中不包含 LoginJsInstrumentationSubtask，则抛出异常
         js_inst_subtask = get_excepted_subtask(flow_01_response, 'LoginJsInstrumentationSubtask')
         js_inst_url = js_inst_subtask['js_instrumentation']['url']
 
-        # js_inst (難読化された JavaScript で、これの実行結果を認証フローに送信する必要がある) を取得
+        # 获取 js_inst（混淆的 JavaScript，需要将其执行结果发送到认证流程）
         js_inst_response = self._session.get(js_inst_url, headers=self._js_headers)
         if js_inst_response.status_code != 200:
             raise tweepy.TweepyException('Failed to get js_inst')
 
-        # js_inst の JavaScript を実行し、ui_metrics オブジェクトを取得
+        # 执行 js_inst 的 JavaScript 并获取 ui_metrics 对象
         ui_metrics = self._get_ui_metrics(js_inst_response.text)
 
-        # 取得した ui_metrics を認証フローに送信
+        # 将获取的 ui_metrics 发送到认证流程
         flow_02_response = self._session.post('https://api.x.com/1.1/onboarding/task.json', json={
             'flow_token': get_flow_token(flow_01_response),
             'subtask_inputs': [
@@ -684,16 +684,16 @@ class CookieSessionUserHandler(AuthBase):
         if flow_02_response.status_code != 200:
             raise self._get_tweepy_exception(flow_02_response)
 
-        # subtasks の中に LoginEnterUserIdentifierSSO が含まれていない場合、例外を送出する
+        # 如果 subtasks 中不包含 LoginEnterUserIdentifierSSO，则抛出异常
         get_excepted_subtask(flow_02_response, 'LoginEnterUserIdentifierSSO')
 
-        # 極力公式の Twitter Web App に偽装するためのダミーリクエスト
+        # 为了尽可能模拟官方 Twitter Web App 而发送的虚拟请求
         self._session.post('https://api.x.com/1.1/onboarding/sso_init.json', json={'provider': 'apple'})
 
-        # 怪しまれないように、2秒～4秒の間にランダムな時間待機
-        time.sleep(random.uniform(2.0, 4.0))
+        # 为避免可疑，随机等待1-3秒
+        time.sleep(random.uniform(1.0, 3.0))
 
-        # スクリーンネームを認証フローに送信
+        # 将用户名发送到认证流程
         flow_03_response = self._session.post('https://api.x.com/1.1/onboarding/task.json', json={
             'flow_token': get_flow_token(flow_02_response),
             'subtask_inputs': [
@@ -718,13 +718,13 @@ class CookieSessionUserHandler(AuthBase):
         if flow_03_response.status_code != 200:
             raise self._get_tweepy_exception(flow_03_response)
 
-        # subtasks の中に LoginEnterPassword が含まれていない場合、例外を送出する
+        # 如果 subtasks 中不包含 LoginEnterPassword，则抛出异常
         get_excepted_subtask(flow_03_response, 'LoginEnterPassword')
 
-        # 怪しまれないように、2秒～4秒の間にランダムな時間待機
+        # 为避免可疑，随机等待2-4秒
         time.sleep(random.uniform(2.0, 4.0))
 
-        # パスワードを認証フローに送信
+        # 将密码发送到认证流程
         flow_04_response = self._session.post('https://api.x.com/1.1/onboarding/task.json', json={
             'flow_token': get_flow_token(flow_03_response),
             'subtask_inputs': [
@@ -740,22 +740,17 @@ class CookieSessionUserHandler(AuthBase):
         if flow_04_response.status_code != 200:
             raise self._get_tweepy_exception(flow_04_response)
 
-        # ログイン失敗
+        # 登录失败
         if flow_04_response.json()['status'] != 'success':
             raise tweepy.TweepyException(f'Failed to login (status: {flow_04_response.json()["status"]})')
 
-        # subtasks の中に SuccessExit が含まれていない場合、例外を送出する
-        # get_excepted_subtask(flow_04_response, 'SuccessExit')
+        # 如果 subtasks 中不包含 SuccessExit，则抛出异常
         get_excepted_subtask(flow_04_response, 'LoginAcid')
 
-        # await flow.execute_task({
-        #     'subtask_id': 'LoginAcid',
-        #     'enter_text': {
-        #         'text': input('>>> '),
-        #         'link': 'next_link'
-        #     }
-        # })
         print(find_dict(flow_04_response.json(), 'secondary_text', find_one=True)[0]['text'])
+
+        # 为避免可疑，随机等待3-5秒
+        time.sleep(random.uniform(3.0, 5.0))
 
         flow_05_response = self._session.post('https://api.x.com/1.1/onboarding/task.json', json={
             'flow_token': get_flow_token(flow_04_response),
@@ -772,12 +767,10 @@ class CookieSessionUserHandler(AuthBase):
         })
         if flow_05_response.status_code != 200:
             raise self._get_tweepy_exception(flow_05_response)
-        else:
-            print(f'{flow_05_response.json()}')
 
-        # 最後の最後にファイナライズを行う
-        ## このリクエストで、Cookie に auth_token がセットされる
-        ## このタイミングで Cookie の "ct0" 値 (CSRF トークン) がクライアント側で生成したものから、サーバー側で生成したものに更新される
+        # 在最后进行终结化处理
+        ## 通过这个请求，auth_token 将被设置到 Cookie 中
+        ## 在这个时机，Cookie 中的 "ct0" 值(CSRF令牌)会从客户端生成的值更新为服务器端生成的值
         # flow_05_response = self._session.post('https://api.x.com/1.1/onboarding/task.json', json={
         #     'flow_token': get_flow_token(flow_04_response),
         #     'subtask_inputs': [],
@@ -785,11 +778,10 @@ class CookieSessionUserHandler(AuthBase):
         # if flow_05_response.status_code != 200:
         #     raise self._get_tweepy_exception(flow_05_response)
 
-        # ここまで来たら、ログインに成功しているはず
-        ## Cookie にはログインに必要な情報が入っている
-        ## 実際に認証に最低限必要な Cookie は "auth_token" と "ct0" のみ (とはいえそれだけだと怪しまれそうなので、それ以外の値も送る)
-        ## ref: https://qiita.com/SNQ-2001/items/182b278e1e8aaaa21a13
-
+        # 到这一步应该已经登录成功了
+        ## Cookie 中包含了登录所需的信息
+        ## 实际上认证最低限度只需要 "auth_token" 和 "ct0" 这两个 Cookie（不过如果只发送这两个可能会显得可疑，所以也会发送其他值）
+        ## 参考: https://qiita.com/SNQ-2001/items/182b278e1e8aaaa21a13
 
 def find_dict(obj: list | dict, key: str | int, find_one: bool = False) -> list[Any]:
     """

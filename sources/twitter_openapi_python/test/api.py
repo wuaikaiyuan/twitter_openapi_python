@@ -7,13 +7,13 @@ import twitter_openapi_python as api
 
 
 def get_client() -> api.TwitterOpenapiPythonClient:
-    if Path("antfly_cookie.json").exists():
-        with open("antfly_cookie.json", "r") as f:
+    if Path("cookie.json").exists():
+        with open("cookie.json", "r") as f:
             cookies_dict = json.load(f)
         if isinstance(cookies_dict, list):
             cookies_dict = {k["name"]: k["value"] for k in cookies_dict}
     else:
-        raise Exception("antfly_cookie.json not found")
+        raise Exception("cookie.json not found")
 
     client = api.TwitterOpenapiPython()
     client.additional_api_headers = {
