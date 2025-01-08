@@ -37,3 +37,11 @@ This project is dual licensed. You can choose one of the following licenses:
 
 - [Custom License](./LICENSE)
 - [GNU Affero General Public License v3.0](./LICENSE.AGPL)
+
+
+
+
+
+# 重要
+
+python 版本：3.10（不支持3.12）
