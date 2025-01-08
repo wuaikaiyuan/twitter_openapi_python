@@ -1,2 +1,14 @@
-source
+log/
+*.log
+*.swp
+.idea/*
+*/**/.vscode/*
+.vscode/*
+--pysetting--
 venv
+/.venv
+__pycache__
+*.backup
+/*cookie.json
+*/**/*cookie.json
+/debug
